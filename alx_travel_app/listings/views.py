@@ -2,11 +2,13 @@ import os
 import requests
 from django.conf import settings
 from rest_framework.views import APIView
+from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from .models import Payment, Booking
 from .serializers import InitiatePaymentSerializer
 from .tasks import send_payment_confirmation_email
+from .tasks import send_booking_confirmation_email
 
 CHAPA_INIT_URL = "https://api.chapa.co/v1/transaction/initialize"
 CHAPA_VERIFY_URL_TEMPLATE = "https://api.chapa.co/v1/transaction/verify/{reference}"
@@ -119,3 +121,12 @@ class VerifyPaymentAPIView(APIView):
         else:
             payment.mark_failed()
             return Response({"detail": "Payment not completed", "status": txn_status, "payment_id": payment.id}, status=status.HTTP_200_OK)
+
+class BookingViewSet(viewsets.ModelViewSet):
+    queryset = Booking.objects.all()
+    serializer_class = BookingSerializer
+
+    def perform_create(self, serializer):
+        booking = serializer.save()
+        user_email = booking.user.email
+        send_booking_confirmation_email.delay(user_email, booking.id)
